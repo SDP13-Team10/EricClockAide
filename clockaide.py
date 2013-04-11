@@ -1,10 +1,10 @@
-import string,time,datetime,serial
-from ClockAideModes import *
-from ClockAideHelpers import *
+import string,time,datetime,serial,re, os
+#from ClockAideModes import *
+#from ClockAideHelpers import *
 
 BaudRate = 9600
-keypadLocation = "/dev/ttyACM0"
-motorLocation = "/dev/ttyACM1"
+keypadLocation = "/dev/ttyUSB4"
+motorLocation = "/dev/ttyACM0"
 
 keypad = serial.Serial(keypadLocation,BaudRate)
 motor = serial.Serial(motorLocation,BaudRate)
@@ -32,7 +32,7 @@ stuff =	{
 	'7'  : "WAKE_UP",\
 	'8'  : "GET_TIME", \
 	'9'  : "RESET", \
-	'10' : "UNKNOWN"
+	'10' : "SPEAK_TIME"
 	}
 	
 command = {
@@ -60,34 +60,15 @@ namesID = {
 	"654"  : "Prof Leonard", \
 	"987"  : "Prof Soules"
 	}
-def main():
-	
-	global mode	
-	initialization()
-
-	while 1:
-		if mode == "NORMAL":
-			mode = normal()
-		
-		elif mode == "CHECK_ID":
-			mode = checkID()
-			
-		elif mode == "READ":
-			mode = read()
-		
-		elif mode == "SET":
-			mode = set()
-		
-		elif mode == "TEACHER":
-			mode = teacher()
 
 def initialization():
 	global mode
+	global currentTime
 	time.sleep(2)
-	keypad.flush()
-	motor.flush()
+	#keypad.flush()
+	#motor.flush()
 	
-	global currentTime = datetime.datetime.now()
+	currentTime = datetime.datetime.now()
 	print(keypad.write(currentTime.strftime("%H, %M, %S, %d, %m, %Y")))
 	print(motor.write(currentTime.strftime("%H, %M, %S, %d, %m, %Y")))
 	
@@ -99,8 +80,11 @@ def normal():
 	try:
 		comm = stuff[str(keypad.read())]		## use different method other than stuff dictionary
 		
-		speakTime(nowHour(), nowMinute())
-		if comm == "WAKE_UP":					## send check ID signal to keypad and motor
+		if comm == "SPEAK_TIME":
+			speakTime(nowHour(), nowMinute())
+			print(keypad.write(modeLookUp["normal"]))
+			return modes[0]
+		elif comm == "WAKE_UP":					## send check ID signal to keypad and motor
 			print(keypad.write(modeLookUp["check_id"]))
 			print(motor.write(modeLookUp["check_id"]))
 			
@@ -112,9 +96,12 @@ def normal():
 		return modes[0]
 
 def checkID():
+	
+	global id
+	global name
 	try:
-		global id = keypad.read(3)
-		global name = namesID[id]		## replace this with function to check input ID vs. database
+		id = keypad.read(3)
+		name = namesID[id]		## replace this with function to check input ID vs. database
 		if name:
 			print(keypad.write('5'))			## Sends "Correct" Code to Keypad
 			time.sleep(2)
@@ -157,28 +144,39 @@ def set():
 	print(motor.write(modeLookUp["set"]))
 	time.sleep(2)
 	#tme = currentTime.strftime("%H, %M")
-	senttime = setModeTime(ID)
+	senttime = setModeTime(id)
 	print(keypad.write(senttime))
+
+	try:
+
+		comm = stuff[str(keypad.read())]
 	
-	motortime = getTimeFromMotor()
+		if comm == "GET_TIME":
+			motortime = getTimeFromMotor()
 	
-	if senttime == motortime:
-		print(keypad.write(command["good"]))
-		time.sleep(2)
-		print(keypad.write(modeLookUp["normal"]))
-		print(motor.write(modeLookUp["set"]))
+		#else
+		
+		if senttime == motortime:
+			print(keypad.write(command["good"]))
+			time.sleep(2)
+			print(keypad.write(modeLookUp["normal"]))
+			print(motor.write(modeLookUp["normal"]))
+			return modes[0]
+			
+		else:
+			print(keypad.write(command["wrong"]))
+			time.sleep(2)
+			print(keypad.write(modeLookUp["set"]))
+			print(motor.write(modeLookUp["set"]))
+			return modes[3]
+
+	except KeyError:
+		print "Error!!!"
 		return modes[0]
+
+def getTimeFromMotor():
+	return "4, 15"
 		
-	else:
-		print(keypad.write(command["wrong"]))
-		time.sleep(2)
-		print(keypad.write(modeLookUp["set"]))
-		print(motor.write(modeLookUp["set"]))
-		return modes[2]
-		
-	time.sleep(60)
-	print(keypad.write('0'))
-	
 def checkReadTime(readTime):
 
 	# compare entered time with time given to student
@@ -222,11 +220,33 @@ def speakTime(hour,minute):
 
 	hour = re.sub("^0+","",hour)
 
-	hourFile = "./VoiceMap/Hours/"+str(hour)+".wav"
+	hourFile = "~/VoiceMap/Hours/"+str(hour)+".wav"
 	if minute is "0":
-		minuteFile="./VoiceMap/Wildcard/oclock.wav"
+		minuteFile="~/VoiceMap/Wildcard/oclock.wav"
 	else:
-		minuteFile="./VoiceMap/Minutes/"+str(minute)+".wav"
+		minuteFile="~/VoiceMap/Minutes/"+str(minute)+".wav"
 
 	playVoiceMap = "mplayer %s 1>/dev/null 2>&1 " + hourFile + " " + minuteFile
 	os.system(playVoiceMap)
+def main():
+	
+	global mode	
+	initialization()
+
+	while 1:
+		if mode == "NORMAL":
+			mode = normal()
+		
+		elif mode == "CHECK_ID":
+			mode = checkID()
+			
+		elif mode == "READ":
+			mode = read()
+		
+		elif mode == "SET":
+			mode = set()
+		
+		elif mode == "TEACHER":
+			mode = teacher()
+
+main()
